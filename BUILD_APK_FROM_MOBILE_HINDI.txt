@@ -1,0 +1,15 @@
+मोबाइल से APK बनाने के लिए (GitHub Actions के माध्यम से)
+
+महत्वपूर्ण: यह ZIP Android project source है, APK नहीं। APK cloud में बनाने के लिए GitHub account और इंटरनेट चाहिए।
+
+1. ZIP को extract करें।
+2. GitHub पर नया repository बनाएँ (उदाहरण: JSK-Accounting-Master)।
+3. Extract किए गए project के अंदर की सभी files/folders repository के root में upload करें। ध्यान रखें कि .github/workflows/build-apk.yml भी upload हो।
+4. Repository में Actions tab खोलें। यदि पूछा जाए तो workflows enable करें।
+5. “Build JSK Accounting Master APK” workflow चुनें और “Run workflow” दबाएँ।
+6. Build सफल होने पर workflow run खोलें; नीचे Artifacts में JSK-Accounting-Master-debug-apk डाउनलोड करें।
+7. ZIP artifact extract करें और app-debug.apk इंस्टॉल करें। Android install permission माँग सकता है।
+
+अगर build fail हो, Actions log का लाल error स्क्रीनशॉट/टेक्स्ट भेजें।
+
+इस APK को debug build के रूप में बनाया जाएगा; इसे Play Store release के लिए signed release APK न समझें।
