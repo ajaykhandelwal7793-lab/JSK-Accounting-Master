@@ -11,18 +11,31 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Check Android project
+      - name: Extract Android project ZIP
         run: |
-          echo "Checking uploaded project"
-          find . -maxdepth 4 -type f | head -100
-
-      - name: Build APK
-        run: |
-          if [ -f "gradlew" ]; then
-            chmod +x gradlew
-            ./gradlew assembleDebug
-          else
-            echo "Android Gradle project not found in repository root."
-            echo "The uploaded ZIP must be extracted and project files placed correctly."
+          ZIP=$(find . -maxdepth 2 -type f -name '*.zip' | head -1)
+          if [ -z "$ZIP" ]; then
+            echo "Project ZIP not found"
             exit 1
           fi
+          mkdir android-project
+          unzip -q "$ZIP" -d android-project
+          find android-project -maxdepth 4 -type f | head -100
+
+      - name: Locate Gradle project
+        run: |
+          GRADLEW=$(find android-project -type f -name gradlew | head -1)
+          if [ -z "$GRADLEW" ]; then
+            echo "No gradlew found. ZIP may not contain a complete Android Gradle project."
+            exit 1
+          fi
+          cd "$(dirname "$GRADLEW")"
+          chmod +x gradlew
+          ./gradlew assembleDebug
+
+      - name: Upload APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: JSK-Accounting-Master-APK
+          path: android-project/**/build/outputs/apk/debug/*.apk
