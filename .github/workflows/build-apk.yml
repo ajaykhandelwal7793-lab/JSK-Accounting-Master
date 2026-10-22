@@ -3,67 +3,74 @@ name: Build JSK Accounting Master APK
 on:
   workflow_dispatch:
   push:
-    paths:
-      - ".github/workflows/build-apk.yml"
-
-permissions:
-  contents: read
+    branches:
+      - main
 
 jobs:
   build:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout Repository
+      - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Setup Java 17
+      - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: "17"
+          java-version: '17'
 
-      - name: Setup Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        with:
-          cmdline-tools-version: "latest"
-          accept-android-sdk-licenses: true
 
-      - name: Install Android SDK Packages
+      - name: Accept Android SDK licenses
+        run: yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK packages
         run: |
-          sdkmanager --sdk_root="$ANDROID_HOME" \
-            "platform-tools" \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+          sdkmanager "platform-tools"
+          sdkmanager "platforms;android-35"
+          sdkmanager "build-tools;35.0.0"
 
-      - name: Setup Gradle
+      - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
-          gradle-version: "8.9"
+          gradle-version: '8.9'
 
-      - name: Locate Android Project
-        shell: bash
+      - name: Extract Android project ZIP
         run: |
-          PROJECT="$(find . -name settings.gradle -not -path './.git/*' -type f | head -n 1)"
+          mkdir -p android-project
+          ZIP=$(find . -maxdepth 2 -type f -name '*.zip' | head -1)
 
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: settings.gradle not found."
-            echo "Check that the Android project ZIP contains settings.gradle."
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: Android project ZIP not found"
             exit 1
           fi
 
-          echo "PROJECT_DIR=$(dirname "$PROJECT")" >> "$GITHUB_ENV"
-          echo "Found Android project: $(dirname "$PROJECT")"
+          unzip -oq "$ZIP" -d android-project
+
+      - name: Locate Android project
+        run: |
+          PROJECT=$(find android-project \
+            -type f -name settings.gradle \
+            -printf '%h\n' | head -1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: settings.gradle not found in project ZIP"
+            find android-project -maxdepth 5 -type f
+            exit 1
+          fi
+
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
       - name: Build APK
-        shell: bash
         run: |
-          cd "$PROJECT_DIR"
-          gradle --no-daemon assembleDebug
+          cd "$PROJECT"
+          gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: JSK-Accounting-Master-APK
-          path: "**/build/outputs/apk/debug/*.apk"
+          path: android-project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
