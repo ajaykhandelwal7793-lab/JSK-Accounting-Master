@@ -19,10 +19,17 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        
+
       - name: Accept Android SDK licenses
-        run: yes | sdkmanager --license
-        
+        run: |
+          yes | sdkmanager --licenses || true
+
+      - name: Install Android SDK packages
+        run: |
+          sdkmanager "platforms;android-35" \
+                     "build-tools;35.0.0" \
+                     "platform-tools"
+
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
@@ -32,23 +39,31 @@ jobs:
         run: |
           mkdir android-project
           ZIP=$(find . -maxdepth 2 -type f -name '*.zip' | head -1)
+
           if [ -z "$ZIP" ]; then
-            echo "Project ZIP not found"
+            echo "ERROR: Project ZIP not found"
             exit 1
           fi
+
           unzip -q "$ZIP" -d android-project
+
+      - name: Locate Android project
+        run: |
+          PROJECT=$(find android-project \
+            -name settings.gradle \
+            -type f -printf '%h\n' | head -1)
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: settings.gradle not found"
+            exit 1
+          fi
+
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
 
       - name: Build APK
         run: |
-          PROJECT=$(find android-project -name settings.gradle -printf '%h\n' | head -1)
-          if [ -z "$PROJECT" ]; then
-            echo "settings.gradle not found"
-            exit 1
-          fi
-          yes | sdkmanager --licenses >/dev/null || true
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
           cd "$PROJECT"
-          gradle assembleDebug
+          gradle assembleDebug --no-daemon
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
