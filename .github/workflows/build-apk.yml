@@ -22,13 +22,11 @@ jobs:
 
       - name: Accept Android SDK licenses
         run: |
-          yes | sdkmanager --licenses || true
+          yes | sdkmanager --licenses > /dev/null 2>&1 || true
 
       - name: Install Android SDK packages
         run: |
-          sdkmanager "platforms;android-35" \
-                     "build-tools;35.0.0" \
-                     "platform-tools"
+          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -37,31 +35,21 @@ jobs:
 
       - name: Extract Android project ZIP
         run: |
-          mkdir android-project
+          mkdir -p android-project
           ZIP=$(find . -maxdepth 2 -type f -name '*.zip' | head -1)
-
           if [ -z "$ZIP" ]; then
-            echo "ERROR: Project ZIP not found"
+            echo "Project ZIP not found"
             exit 1
           fi
-
           unzip -q "$ZIP" -d android-project
 
-      - name: Locate Android project
+      - name: Locate project and build APK
         run: |
-          PROJECT=$(find android-project \
-            -name settings.gradle \
-            -type f -printf '%h\n' | head -1)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: settings.gradle not found"
+          PROJECT=$(find android-project -name settings.gradle -type f -print -quit | xargs dirname)
+          if [ -z "$PROJECT" ] || [ ! -f "$PROJECT/app/build.gradle" ]; then
+            echo "Android project files are incomplete."
             exit 1
           fi
-
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-
-      - name: Build APK
-        run: |
           cd "$PROJECT"
           gradle assembleDebug --no-daemon
 
