@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   build:
-    name: Build APK
+    name: Build Android APK
     runs-on: ubuntu-latest
 
     steps:
@@ -24,14 +24,16 @@ jobs:
           distribution: temurin
           java-version: '17'
 
-      - name: Prepare Android SDK
+      - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: ''
 
       - name: Accept Android SDK licenses
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          yes | sdkmanager --licenses || true
 
-      - name: Install required Android SDK packages
+      - name: Install Android SDK packages
         run: |
           sdkmanager --install \
             "platform-tools" \
@@ -43,7 +45,7 @@ jobs:
         with:
           gradle-version: '8.9'
 
-      - name: Find and extract Android project
+      - name: Extract Android project ZIP
         shell: bash
         run: |
           mkdir -p android-project
@@ -52,65 +54,16 @@ jobs:
             ! -path './android-project/*' | head -1)
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: Android project ZIP not found."
+            echo "ERROR: Android project ZIP not found"
             exit 1
           fi
 
-          echo "Using project ZIP: $ZIP"
+          echo "Project ZIP: $ZIP"
           unzip -oq "$ZIP" -d android-project
 
-      - name: Locate Gradle project
+      - name: Locate Android project
         shell: bash
         run: |
           PROJECT=$(find android-project \
             -type f -name settings.gradle \
-            -printf '%h\n' | head -1)
-
-          if [ -z "$PROJECT" ]; then
-            echo "ERROR: settings.gradle not found."
-            echo "Files found in extracted ZIP:"
-            find android-project -maxdepth 5 -type f | head -100
-            exit 1
-          fi
-
-          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Android project found: $PROJECT"
-
-      - name: Verify Android project files
-        shell: bash
-        run: |
-          cd "$PROJECT"
-
-          if [ ! -f build.gradle ] && \
-             [ ! -f build.gradle.kts ]; then
-            echo "ERROR: Root build.gradle is missing."
-            exit 1
-          fi
-
-          if [ ! -f app/build.gradle ] && \
-             [ ! -f app/build.gradle.kts ]; then
-            echo "ERROR: app/build.gradle is missing."
-            exit 1
-          fi
-
-          if [ ! -f app/src/main/AndroidManifest.xml ]; then
-            echo "ERROR: AndroidManifest.xml is missing."
-            exit 1
-          fi
-
-          if [ ! -f app/src/main/assets/index.html ]; then
-            echo "ERROR: app/src/main/assets/index.html is missing."
-            exit 1
-          fi
-
-      - name: Build Debug APK
-        run: |
-          cd "$PROJECT"
-          gradle assembleDebug --no-daemon
-
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: JSK-Accounting-Master-APK
-          path: ${{ env.PROJECT }}/app/build/outputs/apk/debug/*.apk
-          if-no-files-found: error
+            -printf '%h\n' | head
