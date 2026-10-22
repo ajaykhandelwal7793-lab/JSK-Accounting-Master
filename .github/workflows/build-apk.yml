@@ -3,56 +3,109 @@ name: Build JSK Accounting Master APK
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
 
     steps:
+      # Step 1: Download repository files
       - name: Checkout repository
         uses: actions/checkout@v4
 
+      # Step 2: Set up Java
       - name: Set up Java
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # Step 3: Set up Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # Step 4: Accept Android SDK licenses
       - name: Accept Android SDK licenses
         run: |
-          yes | sdkmanager --licenses > /dev/null 2>&1 || true
+          mkdir -p "$ANDROID_HOME/licenses"
 
+          printf '%s\n' \
+            8933bad161af4178b1185d1a37fbf41ea5269c55 \
+            d56f5187479451eabf01fb78af6dfcb131a6481e \
+            24333f8a63b6825ea9c5514f83c2829b004d1fee \
+            > "$ANDROID_HOME/licenses/android-sdk-license"
+
+          yes | sdkmanager --licenses || true
+
+      # Step 5: Install Android SDK packages
       - name: Install Android SDK packages
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0" \
+            "platform-tools"
 
+      # Step 6: Set up Gradle
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      # Step 7: Find and extract Android project ZIP
       - name: Extract Android project ZIP
         run: |
           mkdir -p android-project
+
           ZIP=$(find . -maxdepth 2 -type f -name '*.zip' | head -1)
+
           if [ -z "$ZIP" ]; then
-            echo "Project ZIP not found"
+            echo "ERROR: Android project ZIP not found"
             exit 1
           fi
+
+          echo "Found ZIP: $ZIP"
           unzip -q "$ZIP" -d android-project
 
-      - name: Locate project and build APK
+      # Step 8: Locate the Android project
+      - name: Locate Android project
         run: |
-          PROJECT=$(find android-project -name settings.gradle -type f -print -quit | xargs dirname)
-          if [ -z "$PROJECT" ] || [ ! -f "$PROJECT/app/build.gradle" ]; then
-            echo "Android project files are incomplete."
+          PROJECT=$(find android-project \
+            -name settings.gradle \
+            -type f -print -quit)
+
+          if [ -z "$PROJECT" ]; then
+            PROJECT=$(find android-project \
+              -name settings.gradle.kts \
+              -type f -print -quit)
+          fi
+
+          if [ -z "$PROJECT" ]; then
+            echo "ERROR: settings.gradle not found"
+            find android-project -maxdepth 5 -type f
             exit 1
           fi
+
+          PROJECT=$(dirname "$PROJECT")
+
+          if [ ! -f "$PROJECT/app/build.gradle" ] && \
+             [ ! -f "$PROJECT/app/build.gradle.kts" ]; then
+            echo "ERROR: app/build.gradle not found"
+            find "$PROJECT" -maxdepth 5 -type f
+            exit 1
+          fi
+
+          echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+          echo "Android project found: $PROJECT"
+
+      # Step 9: Build APK
+      - name: Build Debug APK
+        run: |
           cd "$PROJECT"
           gradle assembleDebug --no-daemon
 
+      # Step 10: Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
