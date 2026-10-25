@@ -93,7 +93,19 @@ jobs:
           PROJECT="${PROJECT_FILE%/*}"
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "Project folder: $PROJECT"
-
+     
+      - name: Set JSK App Icon
+        shell: bash
+        run: |
+          set -e
+          ICON="$GITHUB_WORKSPACE/jsk_icon.png"
+          if [ ! -f "$ICON" ]; then
+            echo "Icon file not found: $ICON"
+            exit 1
+          fi
+          echo "Icon file found: $ICON"
+          find "$GITHUB_WORKSPACE" -type d -name res -path "*/src/main/res" -print
+          
       - name: Build Debug APK
         shell: bash
         run: |
