@@ -24,32 +24,31 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK Licenses
-        shell: bash
-        run: |
-          set -e
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-            -type f -name sdkmanager -print -quit)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            exit 1
-          fi
-
-          yes | "$SDKMANAGER" --licenses || true
-
       - name: Install Android SDK Packages
         shell: bash
         run: |
           set -e
 
-          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+
+          if [ -z "$SDK_ROOT" ]; then
+            echo "ERROR: Android SDK path not found."
+            exit 1
+          fi
+
+          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" \
             -type f -name sdkmanager -print -quit)"
 
           if [ -z "$SDKMANAGER" ]; then
             echo "ERROR: sdkmanager not found."
+            find "$SDK_ROOT" -maxdepth 5 -type f \
+              -name sdkmanager -print
             exit 1
           fi
+
+          echo "Using sdkmanager: $SDKMANAGER"
+
+          yes | "$SDKMANAGER" --licenses || true
 
           "$SDKMANAGER" --install \
             "platform-tools" \
@@ -65,6 +64,7 @@ jobs:
         shell: bash
         run: |
           set -e
+
           mkdir -p android-project
 
           ZIP="$GITHUB_WORKSPACE/JSK_Accounting_Master_V43_Android_Project.zip"
@@ -81,6 +81,7 @@ jobs:
           fi
 
           echo "Using ZIP: $ZIP"
+
           unzip -q "$ZIP" -d android-project
 
       - name: Locate Android Project
@@ -102,6 +103,7 @@ jobs:
           PROJECT="$(dirname "$PROJECT_FILE")"
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
+
           echo "Android project: $PROJECT"
 
       - name: Set JSK App Icon
@@ -122,7 +124,6 @@ jobs:
 
           if [ -z "$RES" ] || [ ! -d "$RES" ]; then
             echo "ERROR: Android res folder not found."
-            echo "Project folders:"
             find "$PROJECT" -maxdepth 7 -type d | head -200
             exit 1
           fi
@@ -189,7 +190,9 @@ jobs:
         shell: bash
         run: |
           set -e
+
           cd "$PROJECT"
+
           gradle assembleDebug --no-daemon
 
       - name: Upload APK
