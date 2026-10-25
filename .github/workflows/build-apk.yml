@@ -12,41 +12,40 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+      # 1. Checkout repository
       - name: Checkout Repository
         uses: actions/checkout@v4
 
+      # 2. Install Java 17
       - name: Set up Java 17
         uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: '17'
 
+      # 3. Set up Android SDK
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
+      # 4. Install Android SDK packages
       - name: Install Android SDK Packages
         shell: bash
         run: |
           set -e
 
-          SDK_ROOT="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-}}"
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
 
-          if [ -z "$SDK_ROOT" ]; then
-            echo "ERROR: Android SDK path not found."
-            exit 1
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "${ANDROID_HOME}/cmdline-tools" \
+              -type f -name sdkmanager -print -quit)"
           fi
 
-          SDKMANAGER="$(find "$SDK_ROOT/cmdline-tools" \
-            -type f -name sdkmanager -print -quit)"
-
-          if [ -z "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager not found."
-            find "$SDK_ROOT" -maxdepth 5 -type f \
-              -name sdkmanager -print
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager executable not found."
+            find "${ANDROID_HOME}/cmdline-tools" \
+              -maxdepth 5 -type f | head -50
             exit 1
           fi
-
-          echo "Using sdkmanager: $SDKMANAGER"
 
           yes | "$SDKMANAGER" --licenses || true
 
@@ -55,23 +54,26 @@ jobs:
             "platforms;android-35" \
             "build-tools;35.0.0"
 
+      # 5. Set up Gradle
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
+      # 6. Extract Android project ZIP
       - name: Extract Android Project ZIP
         shell: bash
         run: |
           set -e
-
           mkdir -p android-project
 
           ZIP="$GITHUB_WORKSPACE/JSK_Accounting_Master_V43_Android_Project.zip"
 
           if [ ! -f "$ZIP" ]; then
             ZIP="$(find "$GITHUB_WORKSPACE" \
-              -maxdepth 3 -type f -iname '*.zip' \
+              -maxdepth 3 \
+              -type f \
+              -name '*.zip' \
               -print -quit)"
           fi
 
@@ -80,10 +82,10 @@ jobs:
             exit 1
           fi
 
-          echo "Using ZIP: $ZIP"
-
+          echo "Found ZIP: $ZIP"
           unzip -q "$ZIP" -d android-project
 
+      # 7. Locate Android project
       - name: Locate Android Project
         shell: bash
         run: |
@@ -96,16 +98,16 @@ jobs:
 
           if [ -z "$PROJECT_FILE" ]; then
             echo "ERROR: Gradle settings file not found."
-            find android-project -maxdepth 6 -type f | head -200
+            find android-project -maxdepth 5 -type f | head -100
             exit 1
           fi
 
           PROJECT="$(dirname "$PROJECT_FILE")"
 
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-
           echo "Android project: $PROJECT"
 
+      # 8. Set application icon
       - name: Set JSK App Icon
         shell: bash
         run: |
@@ -115,7 +117,6 @@ jobs:
 
           if [ ! -f "$ICON" ]; then
             echo "ERROR: jsk_icon.png not found in repository root."
-            ls -la "$GITHUB_WORKSPACE"
             exit 1
           fi
 
@@ -124,21 +125,20 @@ jobs:
 
           if [ -z "$RES" ] || [ ! -d "$RES" ]; then
             echo "ERROR: Android res folder not found."
-            find "$PROJECT" -maxdepth 7 -type d | head -200
             exit 1
           fi
 
-          echo "Android resources: $RES"
+          echo "Resource folder: $RES"
 
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
           for SPEC in \
-            mdpi:48 \
-            hdpi:72 \
-            xhdpi:96 \
-            xxhdpi:144 \
-            xxxhdpi:192
+            "mdpi:48" \
+            "hdpi:72" \
+            "xhdpi:96" \
+            "xxhdpi:144" \
+            "xxxhdpi:192"
           do
             DENSITY="${SPEC%%:*}"
             SIZE="${SPEC##*:}"
@@ -156,8 +156,9 @@ jobs:
               "$DIR/ic_launcher_round.png"
           done
 
-          echo "Launcher icon images generated."
+          echo "Launcher icons generated successfully."
 
+      # 9. Configure manifest icon
       - name: Configure Manifest Icon
         shell: bash
         run: |
@@ -174,18 +175,53 @@ jobs:
 
           echo "Manifest: $MANIFEST"
 
-          if grep -q 'android:icon=' "$MANIFEST"; then
-            sed -i \
-              's|android:icon="@[^"]*"|android:icon="@mipmap/ic_launcher"|' \
-              "$MANIFEST"
-          else
-            sed -i \
-              's|<application|<application android:icon="@mipmap/ic_launcher"|' \
-              "$MANIFEST"
-          fi
+          python3 - "$MANIFEST" <<'PY'
+          import sys
+          import re
 
-          echo "Manifest launcher icon configured."
+          path = sys.argv[1]
 
+          with open(path, "r", encoding="utf-8") as f:
+              content = f.read()
+
+          if re.search(r'<application\b[^>]*>', content):
+              def update_application(match):
+                  tag = match.group(0)
+
+                  tag = re.sub(
+                      r'\s+android:icon\s*=\s*"[^"]*"',
+                      '',
+                      tag
+                  )
+
+                  tag = re.sub(
+                      r'\s+android:roundIcon\s*=\s*"[^"]*"',
+                      '',
+                      tag
+                  )
+
+                  tag = tag[:-1] + \
+                      ' android:icon="@mipmap/ic_launcher"' \
+                      ' android:roundIcon="@mipmap/ic_launcher_round">'
+
+                  return tag
+
+              content = re.sub(
+                  r'<application\b[^>]*>',
+                  update_application,
+                  content,
+                  count=1
+              )
+          else:
+              raise SystemExit("ERROR: application tag not found.")
+
+          with open(path, "w", encoding="utf-8") as f:
+              f.write(content)
+
+          print("Manifest launcher icon configured.")
+          PY
+
+      # 10. Build APK
       - name: Build Debug APK
         shell: bash
         run: |
@@ -195,9 +231,10 @@ jobs:
 
           gradle assembleDebug --no-daemon
 
+      # 11. Upload APK
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: JSK-Accounting-Master-APK
-          path: android-project/**/*.apk
+          path: android-project/**/build/outputs/apk/debug/*.apk
           if-no-files-found: error
