@@ -136,23 +136,26 @@ jobs:
           ICON="$GITHUB_WORKSPACE/jsk_icon.png"
 
           if [ ! -f "$ICON" ]; then
-            echo "ERROR: jsk_icon.png not found in repository root."
+            echo "ERROR: jsk_icon.png not found."
             exit 1
           fi
 
-          echo "Searching Android resource folder..."
+          echo "Project directory: $PROJECT"
 
-          RES="$(find "$PROJECT" -type d \
-            -path '*/src/main/res' -print -quit)"
+          APP_DIR="$PROJECT/app"
 
-          if [ -z "$RES" ] || [ ! -d "$RES" ]; then
-            echo "ERROR: Android res folder not found."
-            echo "Searching project files..."
-            find "$PROJECT" -maxdepth 6 -type f | head -100
+          if [ ! -d "$APP_DIR" ]; then
+            echo "ERROR: app directory not found."
+            find "$PROJECT" -maxdepth 4 -type d
             exit 1
           fi
 
-          echo "Resource folder found: $RES"
+          RES="$APP_DIR/src/main/res"
+
+          # Create resource folder if it does not exist
+          mkdir -p "$RES"
+
+          echo "Resource directory: $RES"
 
           sudo apt-get update
           sudo apt-get install -y imagemagick
@@ -180,7 +183,7 @@ jobs:
               "$DIR/ic_launcher_round.png"
           done
 
-          echo "Launcher icons generated successfully."
+          echo "JSK launcher icons created successfully."
       # 9. Configure manifest icon
       - name: Configure Manifest Icon
         shell: bash
