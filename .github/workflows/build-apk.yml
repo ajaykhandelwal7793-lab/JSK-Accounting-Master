@@ -12,7 +12,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout Repository
         uses: actions/checkout@v4
 
       - name: Set up Java 17
@@ -24,55 +24,67 @@ jobs:
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
 
-      - name: Accept Android SDK licenses
+      - name: Accept Android SDK Licenses
         shell: bash
-        run: |
-          yes | sdkmanager --licenses || true
+        run: yes | sdkmanager --licenses || true
 
-      - name: Install Android SDK packages
+      - name: Install Android SDK Packages
         shell: bash
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+          sdkmanager "platform-tools" \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
-      - name: Extract Android project ZIP
+      - name: Extract Android Project ZIP
         shell: bash
         run: |
-          set -e
           mkdir -p android-project
 
-          ZIP="$(find "$GITHUB_WORKSPACE" -maxdepth 2 -type f -name '*.zip' -print -quit)"
+          ZIP="$(find "$GITHUB_WORKSPACE" \
+            -maxdepth 2 \
+            -type f \
+            -name 'JSK_Accounting_Master_V43_Android_Project.zip' \
+            -print -quit)"
 
           if [ -z "$ZIP" ]; then
-            echo "ERROR: Android project ZIP not found"
+            ZIP="$(find "$GITHUB_WORKSPACE" \
+              -maxdepth 2 \
+              -type f \
+              -name '*.zip' \
+              -print -quit)"
+          fi
+
+          if [ -z "$ZIP" ]; then
+            echo "ERROR: Android project ZIP not found."
             exit 1
           fi
 
-          echo "ZIP found: $ZIP"
+          echo "Found ZIP: $ZIP"
           unzip -q "$ZIP" -d android-project
 
-      - name: Locate Android project
+      - name: Locate Android Project
         shell: bash
         run: |
-          set -e
-
           PROJECT_FILE="$(find android-project -type f \
-            -name settings.gradle -o -name settings.gradle.kts \
+            -name settings.gradle \
+            -o -name settings.gradle.kts \
             -print -quit)"
 
           if [ -z "$PROJECT_FILE" ]; then
-            echo "ERROR: settings.gradle not found"
+            echo "ERROR: Gradle settings file not found."
             find android-project -maxdepth 5 -type f | head -100
             exit 1
           fi
 
-          PROJECT="${PROJECT_FILE%/*}"
+          PROJECT="$(dirname "$PROJECT_FILE")"
+
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
-          echo "Project folder: $PROJECT"
+          echo "Android project: $PROJECT"
 
       - name: Set JSK App Icon
         shell: bash
@@ -80,45 +92,53 @@ jobs:
           set -e
 
           ICON="$GITHUB_WORKSPACE/jsk_icon.png"
-          RES="$PROJECT/app/src/main/res"
 
           if [ ! -f "$ICON" ]; then
-            echo "ERROR: jsk_icon.png not found"
+            echo "ERROR: jsk_icon.png not found in repository root."
             exit 1
           fi
 
+          echo "Icon found: $ICON"
+
+          RES="$PROJECT/app/src/main/res"
+
           if [ ! -d "$RES" ]; then
-            RES="$(find "$PROJECT" -type d -path '*/src/main/res' -print -quit)"
+            RES="$(find "$PROJECT" -type d \
+              -path '*/src/main/res' -print -quit)"
           fi
 
           if [ -z "$RES" ] || [ ! -d "$RES" ]; then
-            echo "ERROR: Android res folder not found"
-            find "$PROJECT" -type d -name res -print
+            echo "ERROR: Android res folder not found."
             exit 1
           fi
 
-          echo "Android resources: $RES"
+          echo "Resource folder: $RES"
 
-          python3 - "$ICON" "$RES" <<'PY'
-          import sys
-          from pathlib import Path
-          from PIL import Image, ImageOps
+          if ! command -v convert >/dev/null 2>&1; then
+            sudo apt-get update
+            sudo apt-get install -y imagemagick
+          fi
 
-          icon_path = Path(sys.argv[1])
-          res = Path(sys.argv[2])
+          for SPEC in \
+            "mdpi:48" \
+            "hdpi:72" \
+            "xhdpi:96" \
+            "xxhdpi:144" \
+            "xxxhdpi:192"
+          do
+            DENSITY="${SPEC%%:*}"
+            SIZE="${SPEC##*:}"
 
-          image = Image.open(icon_path).convert("RGBA")
-          image = ImageOps.fit(image, (512, 512), method=Image.Resampling.LANCZOS)
+            mkdir -p "$RES/mipmap-$DENSITY"
 
-          sizes = {
-              "mipmap-mdpi": 48,
-              "mipmap-hdpi": 72,
-              "mipmap-xhdpi": 96,
-              "mipmap-xxhdpi": 144,
-              "mipmap-xxxhdpi": 192,
-          }
+            convert "$ICON" \
+              -resize "${SIZE}x${SIZE}^" \
+              -gravity center \
+              -extent "${SIZE}x${SIZE}" \
+              "$RES/mipmap-$DENSITY/ic_launcher.png"
 
-          for folder, size in sizes.items():
-              target_dir = res / folder
-              target_dir.mkdir(parents=True, exist_ok=True)
-              image.resize
+            convert "$ICON" \
+              -resize "${SIZE}x${SIZE}^" \
+              -gravity center \
+              -extent "${SIZE}x${SIZE}" \
+              "$RES/mipmap-$DENSITY/ic_launcher_round
