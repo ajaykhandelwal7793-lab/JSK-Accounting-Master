@@ -26,12 +26,16 @@ jobs:
 
       - name: Accept Android SDK Licenses
         shell: bash
-        run: yes | sdkmanager --licenses || true
+        run: |
+          set -e
+          yes | sdkmanager --licenses >/dev/null || true
 
       - name: Install Android SDK Packages
         shell: bash
         run: |
-          sdkmanager "platform-tools" \
+          set -e
+          sdkmanager --install \
+            "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
 
@@ -43,15 +47,12 @@ jobs:
       - name: Extract Android Project ZIP
         shell: bash
         run: |
+          set -e
           mkdir -p android-project
 
-          ZIP="$(find "$GITHUB_WORKSPACE" \
-            -maxdepth 2 \
-            -type f \
-            -name 'JSK_Accounting_Master_V43_Android_Project.zip' \
-            -print -quit)"
+          ZIP="$GITHUB_WORKSPACE/JSK_Accounting_Master_V43_Android_Project.zip"
 
-          if [ -z "$ZIP" ]; then
+          if [ ! -f "$ZIP" ]; then
             ZIP="$(find "$GITHUB_WORKSPACE" \
               -maxdepth 2 \
               -type f \
@@ -59,7 +60,7 @@ jobs:
               -print -quit)"
           fi
 
-          if [ -z "$ZIP" ]; then
+          if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
             echo "ERROR: Android project ZIP not found."
             exit 1
           fi
@@ -70,9 +71,11 @@ jobs:
       - name: Locate Android Project
         shell: bash
         run: |
+          set -e
+
           PROJECT_FILE="$(find android-project -type f \
-            -name settings.gradle \
-            -o -name settings.gradle.kts \
+            \( -name settings.gradle \
+            -o -name settings.gradle.kts \) \
             -print -quit)"
 
           if [ -z "$PROJECT_FILE" ]; then
@@ -98,26 +101,19 @@ jobs:
             exit 1
           fi
 
-          echo "Icon found: $ICON"
-
-          RES="$PROJECT/app/src/main/res"
-
-          if [ ! -d "$RES" ]; then
-            RES="$(find "$PROJECT" -type d \
-              -path '*/src/main/res' -print -quit)"
-          fi
+          RES="$(find "$PROJECT" -type d \
+            -path '*/src/main/res' -print -quit)"
 
           if [ -z "$RES" ] || [ ! -d "$RES" ]; then
             echo "ERROR: Android res folder not found."
             exit 1
           fi
 
+          echo "Icon: $ICON"
           echo "Resource folder: $RES"
 
-          if ! command -v convert >/dev/null 2>&1; then
-            sudo apt-get update
-            sudo apt-get install -y imagemagick
-          fi
+          sudo apt-get update
+          sudo apt-get install -y imagemagick
 
           for SPEC in \
             "mdpi:48" \
@@ -128,17 +124,35 @@ jobs:
           do
             DENSITY="${SPEC%%:*}"
             SIZE="${SPEC##*:}"
+            DIR="$RES/mipmap-$DENSITY"
 
-            mkdir -p "$RES/mipmap-$DENSITY"
-
-            convert "$ICON" \
-              -resize "${SIZE}x${SIZE}^" \
-              -gravity center \
-              -extent "${SIZE}x${SIZE}" \
-              "$RES/mipmap-$DENSITY/ic_launcher.png"
+            mkdir -p "$DIR"
 
             convert "$ICON" \
               -resize "${SIZE}x${SIZE}^" \
               -gravity center \
               -extent "${SIZE}x${SIZE}" \
-              "$RES/mipmap-$DENSITY/ic_launcher_round
+              "$DIR/ic_launcher.png"
+
+            convert "$ICON" \
+              -resize "${SIZE}x${SIZE}^" \
+              -gravity center \
+              -extent "${SIZE}x${SIZE}" \
+              "$DIR/ic_launcher_round.png"
+          done
+
+          echo "Launcher icon images generated."
+
+      - name: Build Debug APK
+        shell: bash
+        run: |
+          set -e
+          cd "$PROJECT"
+          gradle assembleDebug --no-daemon
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: JSK-Accounting-Master-APK
+          path: android-project/**/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
