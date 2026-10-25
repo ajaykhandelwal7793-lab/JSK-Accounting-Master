@@ -23,26 +23,33 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-        continue-on-error: true
+
+      - name: Accept Android SDK Licenses
+        shell: bash
+        run: |
+          set -e
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager -print -quit)"
+
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
 
       - name: Install Android SDK Packages
         shell: bash
         run: |
           set -e
 
-          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+          SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+            -type f -name sdkmanager -print -quit)"
 
-          if [ ! -x "$SDKMANAGER" ]; then
-            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
-              -type f -name sdkmanager -print -quit)"
-          fi
-
-          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
-            echo "ERROR: sdkmanager executable not found."
+          if [ -z "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager not found."
             exit 1
           fi
-
-          yes | "$SDKMANAGER" --licenses || true
 
           "$SDKMANAGER" --install \
             "platform-tools" \
@@ -64,7 +71,8 @@ jobs:
 
           if [ ! -f "$ZIP" ]; then
             ZIP="$(find "$GITHUB_WORKSPACE" \
-              -maxdepth 2 -type f -name '*.zip' -print -quit)"
+              -maxdepth 3 -type f -iname '*.zip' \
+              -print -quit)"
           fi
 
           if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
@@ -72,6 +80,7 @@ jobs:
             exit 1
           fi
 
+          echo "Using ZIP: $ZIP"
           unzip -q "$ZIP" -d android-project
 
       - name: Locate Android Project
@@ -81,14 +90,17 @@ jobs:
 
           PROJECT_FILE="$(find android-project -type f \
             \( -name settings.gradle \
-            -o -name settings.gradle.kts \) -print -quit)"
+            -o -name settings.gradle.kts \) \
+            -print -quit)"
 
           if [ -z "$PROJECT_FILE" ]; then
             echo "ERROR: Gradle settings file not found."
+            find android-project -maxdepth 6 -type f | head -200
             exit 1
           fi
 
           PROJECT="$(dirname "$PROJECT_FILE")"
+
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "Android project: $PROJECT"
 
@@ -101,6 +113,7 @@ jobs:
 
           if [ ! -f "$ICON" ]; then
             echo "ERROR: jsk_icon.png not found in repository root."
+            ls -la "$GITHUB_WORKSPACE"
             exit 1
           fi
 
@@ -109,13 +122,22 @@ jobs:
 
           if [ -z "$RES" ] || [ ! -d "$RES" ]; then
             echo "ERROR: Android res folder not found."
+            echo "Project folders:"
+            find "$PROJECT" -maxdepth 7 -type d | head -200
             exit 1
           fi
+
+          echo "Android resources: $RES"
 
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-          for SPEC in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192
+          for SPEC in \
+            mdpi:48 \
+            hdpi:72 \
+            xhdpi:96 \
+            xxhdpi:144 \
+            xxxhdpi:192
           do
             DENSITY="${SPEC%%:*}"
             SIZE="${SPEC##*:}"
@@ -129,10 +151,39 @@ jobs:
               -extent "${SIZE}x${SIZE}" \
               "$DIR/ic_launcher.png"
 
-            cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
+            cp "$DIR/ic_launcher.png" \
+              "$DIR/ic_launcher_round.png"
           done
 
-          echo "Launcher icons generated."
+          echo "Launcher icon images generated."
+
+      - name: Configure Manifest Icon
+        shell: bash
+        run: |
+          set -e
+
+          MANIFEST="$(find "$PROJECT" -type f \
+            -path '*/src/main/AndroidManifest.xml' \
+            -print -quit)"
+
+          if [ -z "$MANIFEST" ]; then
+            echo "ERROR: AndroidManifest.xml not found."
+            exit 1
+          fi
+
+          echo "Manifest: $MANIFEST"
+
+          if grep -q 'android:icon=' "$MANIFEST"; then
+            sed -i \
+              's|android:icon="@[^"]*"|android:icon="@mipmap/ic_launcher"|' \
+              "$MANIFEST"
+          else
+            sed -i \
+              's|<application|<application android:icon="@mipmap/ic_launcher"|' \
+              "$MANIFEST"
+          fi
+
+          echo "Manifest launcher icon configured."
 
       - name: Build Debug APK
         shell: bash
@@ -145,5 +196,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: JSK-Accounting-Master-APK
-          path: android-project/**/build/outputs/apk/debug/*.apk
+          path: android-project/**/*.apk
           if-no-files-found: error
