@@ -23,18 +23,28 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
-
-      - name: Accept Android SDK Licenses
-        shell: bash
-        run: |
-          set -e
-          yes | sdkmanager --licenses >/dev/null || true
+        continue-on-error: true
 
       - name: Install Android SDK Packages
         shell: bash
         run: |
           set -e
-          sdkmanager --install \
+
+          SDKMANAGER="${ANDROID_HOME}/cmdline-tools/latest/bin/sdkmanager"
+
+          if [ ! -x "$SDKMANAGER" ]; then
+            SDKMANAGER="$(find "$ANDROID_HOME/cmdline-tools" \
+              -type f -name sdkmanager -print -quit)"
+          fi
+
+          if [ -z "$SDKMANAGER" ] || [ ! -x "$SDKMANAGER" ]; then
+            echo "ERROR: sdkmanager executable not found."
+            exit 1
+          fi
+
+          yes | "$SDKMANAGER" --licenses || true
+
+          "$SDKMANAGER" --install \
             "platform-tools" \
             "platforms;android-35" \
             "build-tools;35.0.0"
@@ -54,10 +64,7 @@ jobs:
 
           if [ ! -f "$ZIP" ]; then
             ZIP="$(find "$GITHUB_WORKSPACE" \
-              -maxdepth 2 \
-              -type f \
-              -name '*.zip' \
-              -print -quit)"
+              -maxdepth 2 -type f -name '*.zip' -print -quit)"
           fi
 
           if [ -z "$ZIP" ] || [ ! -f "$ZIP" ]; then
@@ -65,7 +72,6 @@ jobs:
             exit 1
           fi
 
-          echo "Found ZIP: $ZIP"
           unzip -q "$ZIP" -d android-project
 
       - name: Locate Android Project
@@ -75,17 +81,14 @@ jobs:
 
           PROJECT_FILE="$(find android-project -type f \
             \( -name settings.gradle \
-            -o -name settings.gradle.kts \) \
-            -print -quit)"
+            -o -name settings.gradle.kts \) -print -quit)"
 
           if [ -z "$PROJECT_FILE" ]; then
             echo "ERROR: Gradle settings file not found."
-            find android-project -maxdepth 5 -type f | head -100
             exit 1
           fi
 
           PROJECT="$(dirname "$PROJECT_FILE")"
-
           echo "PROJECT=$PROJECT" >> "$GITHUB_ENV"
           echo "Android project: $PROJECT"
 
@@ -109,18 +112,10 @@ jobs:
             exit 1
           fi
 
-          echo "Icon: $ICON"
-          echo "Resource folder: $RES"
-
           sudo apt-get update
           sudo apt-get install -y imagemagick
 
-          for SPEC in \
-            "mdpi:48" \
-            "hdpi:72" \
-            "xhdpi:96" \
-            "xxhdpi:144" \
-            "xxxhdpi:192"
+          for SPEC in mdpi:48 hdpi:72 xhdpi:96 xxhdpi:144 xxxhdpi:192
           do
             DENSITY="${SPEC%%:*}"
             SIZE="${SPEC##*:}"
@@ -134,14 +129,10 @@ jobs:
               -extent "${SIZE}x${SIZE}" \
               "$DIR/ic_launcher.png"
 
-            convert "$ICON" \
-              -resize "${SIZE}x${SIZE}^" \
-              -gravity center \
-              -extent "${SIZE}x${SIZE}" \
-              "$DIR/ic_launcher_round.png"
+            cp "$DIR/ic_launcher.png" "$DIR/ic_launcher_round.png"
           done
 
-          echo "Launcher icon images generated."
+          echo "Launcher icons generated."
 
       - name: Build Debug APK
         shell: bash
