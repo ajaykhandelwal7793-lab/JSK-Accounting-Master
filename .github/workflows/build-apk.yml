@@ -140,15 +140,19 @@ jobs:
             exit 1
           fi
 
+          echo "Searching Android resource folder..."
+
           RES="$(find "$PROJECT" -type d \
             -path '*/src/main/res' -print -quit)"
 
           if [ -z "$RES" ] || [ ! -d "$RES" ]; then
             echo "ERROR: Android res folder not found."
+            echo "Searching project files..."
+            find "$PROJECT" -maxdepth 6 -type f | head -100
             exit 1
           fi
 
-          echo "Resource folder: $RES"
+          echo "Resource folder found: $RES"
 
           sudo apt-get update
           sudo apt-get install -y imagemagick
@@ -177,7 +181,6 @@ jobs:
           done
 
           echo "Launcher icons generated successfully."
-
       # 9. Configure manifest icon
       - name: Configure Manifest Icon
         shell: bash
